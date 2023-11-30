@@ -159,10 +159,12 @@ namespace AutoUploadToFTP
                 {
                     if (!_checkFileTime.ContainsKey(dirAndFileName))
                     {
+                        _newFiles.RemoveWhere(d => d.FileName == fileName);
                         _newFiles.Add(new UploadFileInfo { FileName = fileName, Path = pathName?.Replace("|||", "/"), FileType = 0 });
                     }
                     else if (fileInfo.LastWriteTime > _checkFileTime[dirAndFileName])
                     {
+                        _newFiles.RemoveWhere(d => d.FileName == fileName);
                         _newFiles.Add(new UploadFileInfo { FileName = fileName, Path = pathName?.Replace("|||", "/"), FileType = 1 });
                     }
                 }
@@ -198,7 +200,7 @@ namespace AutoUploadToFTP
 
         }
 
-        bool UploadFileUsingSsh()
+        bool UploadFileUsingSsh(int tryTimes = 5)
         {
             bool result = false;
             try
@@ -236,7 +238,7 @@ namespace AutoUploadToFTP
                         {
                             WriteLogAndConsole($"File {file} upload failed, reason: {socketExp.Message}, started trying to reconnect...");
                             CloseFTP();
-                            hasError = !UploadFileUsingSsh();
+                            hasError = !UploadFileUsingSsh(tryTimes);
                             break;
                         }
                         catch (Exception ex)
@@ -259,6 +261,17 @@ namespace AutoUploadToFTP
             catch (Exception ex)
             {
                 WriteLogAndConsole($"FTP connection error occurred，reason：{ex.Message}");
+                tryTimes--;
+                if (tryTimes <= 0)
+                {
+                    return false;
+                }
+                else
+                {
+                    UploadFileUsingSsh(tryTimes);
+                }
+
+
                 return false;
             }
 
