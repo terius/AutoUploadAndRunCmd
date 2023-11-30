@@ -1,6 +1,4 @@
-﻿using System.Xml.Linq;
-
-namespace AutoUploadToFTP
+﻿namespace AutoUploadToFTP
 {
     internal class Dir
     {

@@ -1,6 +1,4 @@
-﻿using System.Reflection;
-
-namespace AutoUploadToFTP
+﻿namespace AutoUploadToFTP
 {
     internal class Log
     {
@@ -10,7 +8,7 @@ namespace AutoUploadToFTP
         public static void Write(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
-            var binPath = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
+            var binPath = Path.GetDirectoryName(AppDomain.CurrentDomain.BaseDirectory);
             var logPath = Path.Combine(binPath, "log");
             if (!Directory.Exists(logPath))
             {
@@ -29,6 +27,6 @@ namespace AutoUploadToFTP
             }
         }
 
-       
+
     }
 }
