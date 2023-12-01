@@ -1,4 +1,5 @@
 ﻿using Renci.SshNet;
+using System.Configuration;
 using System.Net.Sockets;
 
 namespace AutoUploadToFTP
@@ -14,16 +15,18 @@ namespace AutoUploadToFTP
         readonly int _sshPort;
         readonly int _ftpPort;
         readonly bool _uploadAllFileWhenFirstScan;
+        DateTime _checkTime;
 
-        bool _isFirst = true;
+
         Dictionary<string, DateTime> _checkFileTime = new();
         HashSet<UploadFileInfo> _newFiles = new();
         SftpClient _ftpClient = null;
         SshClient _sshClient = null;
         bool hasChange = true;
+        bool isFirst = true;
         public AutoUploadFileAndRunCmdForLinux(string host, string username,
             string password, string localDirectory,
-            string remoteDirectory, string cmd, int sshPort = 22, int ftpPort = 22, bool uploadAll = false)
+            string remoteDirectory, string cmd, DateTime checkTime, int sshPort = 22, int ftpPort = 22, bool uploadAll = false)
         {
 
             _host = host;
@@ -35,6 +38,7 @@ namespace AutoUploadToFTP
             _sshPort = sshPort;
             _ftpPort = ftpPort;
             _uploadAllFileWhenFirstScan = uploadAll;
+            _checkTime = checkTime;
         }
 
         private void WriteLogAndConsole(string message)
@@ -50,7 +54,7 @@ namespace AutoUploadToFTP
                 WriteLogAndConsole($"Local directory can not be empty!");
                 return;
             }
-
+            var aa = File.GetLastWriteTime(_localDirectory);
             if (string.IsNullOrWhiteSpace(_remoteDirectory))
             {
                 WriteLogAndConsole($"Remote directory can not be empty!");
@@ -64,14 +68,15 @@ namespace AutoUploadToFTP
             FileSystemWatcher watcher = new(_localDirectory)
             {
                 // 设置要监视的事件类型
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName
+                NotifyFilter = NotifyFilters.Attributes | NotifyFilters.CreationTime | NotifyFilters.DirectoryName | NotifyFilters.FileName | NotifyFilters.LastAccess
+                                  | NotifyFilters.LastWrite | NotifyFilters.Security | NotifyFilters.Size
             };
 
             // 添加事件处理程序
             watcher.Changed += OnChanged;
             watcher.Created += OnChanged;
             watcher.Deleted += OnChanged;
-            //  watcher.Renamed += OnRenamed;
+            watcher.Renamed += OnChanged;
 
             // 设置为递归监视所有子文件夹
             watcher.IncludeSubdirectories = true;
@@ -122,7 +127,11 @@ namespace AutoUploadToFTP
                     }
                 }
                 WriteLogAndConsole($"Total number of files monitored is {_checkFileTime.Count}");
-                _isFirst = false;
+                if (isFirst)
+                {
+                    SetCheckTimeIsEmpty();
+                }
+                isFirst = false;
                 Thread.Sleep(3000);
                 hasChange = false;
             }
@@ -155,22 +164,26 @@ namespace AutoUploadToFTP
             {
                 var fileInfo = new FileInfo(fileName);
                 var dirAndFileName = pathName != null ? $"{pathName}|||{fileInfo.Name}" : fileInfo.Name;
-                if (!_isFirst || _uploadAllFileWhenFirstScan)
+
+                if (!_checkFileTime.ContainsKey(dirAndFileName))
                 {
-                    if (!_checkFileTime.ContainsKey(dirAndFileName))
+                    if (_uploadAllFileWhenFirstScan || !isFirst || fileInfo.LastWriteTime > _checkTime)
                     {
                         _newFiles.RemoveWhere(d => d.FileName == fileName);
                         _newFiles.Add(new UploadFileInfo { FileName = fileName, Path = pathName?.Replace("|||", "/"), FileType = 0 });
                     }
-                    else if (fileInfo.LastWriteTime > _checkFileTime[dirAndFileName])
-                    {
-                        _newFiles.RemoveWhere(d => d.FileName == fileName);
-                        _newFiles.Add(new UploadFileInfo { FileName = fileName, Path = pathName?.Replace("|||", "/"), FileType = 1 });
-                    }
                 }
+                else if (fileInfo.LastWriteTime > _checkFileTime[dirAndFileName])
+                {
+                    _newFiles.RemoveWhere(d => d.FileName == fileName);
+                    _newFiles.Add(new UploadFileInfo { FileName = fileName, Path = pathName?.Replace("|||", "/"), FileType = 1 });
+                }
+
                 _checkFileTime[dirAndFileName] = fileInfo.LastWriteTime;
                 dir.AddFile(fileInfo);
             }
+
+
 
 
 
@@ -317,6 +330,21 @@ namespace AutoUploadToFTP
             }
 
             return false;
+        }
+
+        private void SetCheckTimeIsEmpty()
+        {
+            Configuration config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
+
+            // 获取appSettings节点
+            AppSettingsSection appSettings = config.AppSettings;
+
+            // 修改键值对
+            appSettings.Settings["CheckTime"].Value = "";
+
+            // 保存修改
+            config.Save(ConfigurationSaveMode.Modified);
+            ConfigurationManager.RefreshSection("appSettings");
         }
     }
 }

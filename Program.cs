@@ -23,8 +23,26 @@ class Program
         string remoteDirectory = GetAppSettingValue("Remotepath");
         string cmd = GetAppSettingValue("Cmd");
         bool uploadAllFilesWhenFirstScan = GetAppSettingValue("UploadAllFilesWhenAppStart") == "1";
+        var checkTime = DateTime.Now;
+        var sTimeStr = GetAppSettingValue("CheckTime");
+        if (!string.IsNullOrWhiteSpace(sTimeStr))
+        {
+            var timeList = sTimeStr.Split(':', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (timeList.Length == 3)
+            {
+                checkTime = DateTime.Today.AddHours(double.Parse(timeList[0])).AddMinutes(double.Parse(timeList[1])).AddSeconds(double.Parse(timeList[2]));
+            }
+            else if (timeList.Length == 2)
+            {
+                checkTime = DateTime.Today.AddHours(double.Parse(timeList[0])).AddMinutes(double.Parse(timeList[1]));
+            }
+            else if (timeList.Length == 1)
+            {
+                checkTime = DateTime.Today.AddHours(double.Parse(timeList[0]));
+            }
+        }
         var autoRun = new AutoUploadFileAndRunCmdForLinux(host, username, password, localFilePath, remoteDirectory,
-            cmd, sshPort, ftpPort, uploadAllFilesWhenFirstScan);
+            cmd, checkTime, sshPort, ftpPort, uploadAllFilesWhenFirstScan);
         autoRun.Run();
 
     }
