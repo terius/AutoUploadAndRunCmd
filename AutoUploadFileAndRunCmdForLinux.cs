@@ -93,7 +93,13 @@ namespace AutoUploadToFTP
             {
                 if (!hasChange)
                 {
+                    Thread.Sleep(10);
                     continue;
+                }
+            
+                if (!isFirst)
+                {
+                    Thread.Sleep(5000);
                 }
                 if (uploadResult)
                 {
@@ -126,14 +132,16 @@ namespace AutoUploadToFTP
                         }
                     }
                 }
+                hasChange = false;
                 WriteLogAndConsole($"Total number of files monitored is {_checkFileTime.Count}");
                 if (isFirst)
                 {
                     SetCheckTimeIsEmpty();
                 }
                 isFirst = false;
+            
                 Thread.Sleep(3000);
-                hasChange = false;
+           
             }
         }
 
