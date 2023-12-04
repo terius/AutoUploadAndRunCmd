@@ -13,5 +13,6 @@ Usage：
 **Remotepath**: the directory where you want to upload files to the remote server, you must create this directory before running the software.  
 **Cmd**: the command to be executed on the remote server after uploading files.  
 **UploadAllFilesWhenAppStart**: whether to upload all files in the monitored folder to the remote server when the software starts, if not, the default is 0 (false).  
-2. Run AutoUploadToFTP.exe  
+**CheckTime**: When the program starts, it checks the files whose change time is greater than this time according to this time, if it is empty, the checking time is set to the current time,After the program scans all files in the monitored folder for the first time, this setting item will be set to empty. If UploadAllFilesWhenAppStart is set to 1, this setting is ignored.  
+3. Run AutoUploadToFTP.exe  
 Have fun :)
