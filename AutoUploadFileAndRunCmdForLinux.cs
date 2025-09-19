@@ -17,51 +17,42 @@ namespace AutoUploadToFTP
         readonly int _ftpPort;
         readonly bool _uploadAllFileWhenFirstScan;
         readonly string[] _ignorePathList;
-        DateTime _checkTime;
-        int _tryTime = 5;
+        DateTime? _checkTime;
+
 
 
         Dictionary<string, DateTime> _checkFileTime = new();
         HashSet<UploadFileInfo> _newFiles = new();
         SftpClient _ftpClient = null;
         SshClient _sshClient = null;
-        bool hasChange = true;
+        //    bool hasChange = true;
         bool isFirst = true;
         string _localCmd;
-        public AutoUploadFileAndRunCmdForLinux(
-            string host,
-            string username,
-            string password,
-            string localDirectory,
-            string remoteDirectory,
-            string cmd,
-            DateTime checkTime,
-            int sshPort = 22,
-            int ftpPort = 22,
-            bool uploadAll = false,
-            string ignorePath = "",
-            string localCmd = null
-            )
+        string _name;
+        Config _config;
+        public AutoUploadFileAndRunCmdForLinux(Config config)
         {
-
-            _host = host;
-            _username = username;
-            _password = password;
-            _localDirectory = localDirectory;
-            _remoteDirectory = remoteDirectory;
-            _cmd = cmd;
-            _sshPort = sshPort;
-            _ftpPort = ftpPort;
-            _uploadAllFileWhenFirstScan = uploadAll;
-            _checkTime = checkTime;
-            _ignorePathList = string.IsNullOrEmpty(ignorePath) ? null : ignorePath.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries); ;
-            _localCmd = localCmd;
+            _config = config;
+            _name = config.Name;
+            _host = config.Host;
+            _username = config.Username;
+            _password = config.Password;
+            _localDirectory = config.Localpath;
+            _remoteDirectory = config.Remotepath;
+            _cmd = config.Cmd;
+            _sshPort = config.Sshport;
+            _ftpPort = config.Ftpport;
+            _uploadAllFileWhenFirstScan = config.UploadAllFilesWhenAppStart;
+            _checkTime = config.CheckTime;
+            _ignorePathList = config.IgnorePathList;
+            _localCmd = config.LocalCmd;
         }
 
         private void WriteLogAndConsole(string message)
         {
-            Console.WriteLine(message);
-            Log.Write(message);
+            var msg = $"【{_name}】{message}";
+            Console.WriteLine(msg);
+            Log.Write(msg);
         }
 
         private bool ConnectToFtp()
@@ -91,127 +82,129 @@ namespace AutoUploadToFTP
         public void Run()
         {
             WriteLogAndConsole($"Start monitoring folders: {_localDirectory}\r\nRemote server: {_host}\r\nSSH Port: {_sshPort},FTP Port: {_ftpPort}");
-            if (string.IsNullOrWhiteSpace(_localDirectory))
+            if (string.IsNullOrWhiteSpace(_localDirectory) || string.IsNullOrWhiteSpace(_remoteDirectory))
             {
-                WriteLogAndConsole($"Local directory can not be empty!");
-                return;
-            }
-            var aa = File.GetLastWriteTime(_localDirectory);
-            if (string.IsNullOrWhiteSpace(_remoteDirectory))
-            {
-                WriteLogAndConsole($"Remote directory can not be empty!");
+                WriteLogAndConsole($"Local or remote directory can not be empty!");
                 return;
             }
 
 
 
-            var isConnected = ConnectToFtp();
-            if (!isConnected)
-            {
-                return;
-            }
+            //if (!ConnectToFtp())
+            //{
+            //    return;
+            //}
 
             var rootDir = new Dir(_localDirectory);
 
 
-            // 创建一个新的 FileSystemWatcher 实例
-            FileSystemWatcher watcher = new(_localDirectory)
-            {
-                // 设置要监视的事件类型
-                NotifyFilter = NotifyFilters.Attributes | NotifyFilters.CreationTime | NotifyFilters.DirectoryName | NotifyFilters.FileName | NotifyFilters.LastAccess
-                                  | NotifyFilters.LastWrite | NotifyFilters.Security | NotifyFilters.Size
-            };
+            //// 创建一个新的 FileSystemWatcher 实例
+            //FileSystemWatcher watcher = new(_localDirectory)
+            //{
+            //    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName,
+            //    IncludeSubdirectories = true,
+            //    EnableRaisingEvents = true
+            //};
 
-            // 添加事件处理程序
-            watcher.Changed += OnChanged;
-            watcher.Created += OnChanged;
-            watcher.Deleted += OnChanged;
-            watcher.Renamed += OnChanged;
+            //// 添加事件处理程序
+            //watcher.Changed += (s, e) => WriteLogAndConsole($"[Watcher] Change detected: {e.FullPath}, Type: {e.ChangeType}");
+            //watcher.Created += (s, e) => WriteLogAndConsole($"[Watcher] Change detected: {e.FullPath}, Type: {e.ChangeType}");
+            //watcher.Deleted += (s, e) => WriteLogAndConsole($"[Watcher] Change detected: {e.FullPath}, Type: {e.ChangeType}");
+            //watcher.Renamed += (s, e) => WriteLogAndConsole($"[Watcher] Change detected: {e.OldFullPath} renamed to {e.FullPath}, Type: {e.ChangeType}");
 
-            // 设置为递归监视所有子文件夹
-            watcher.IncludeSubdirectories = true;
+            //// 设置为递归监视所有子文件夹
+            //watcher.IncludeSubdirectories = true;
 
-            // 启动监视
-            watcher.EnableRaisingEvents = true;
-
-          
+            //// 启动监视
+            //watcher.EnableRaisingEvents = true;
 
 
 
+
+
+            // --- 核心逻辑修改 ---
             var uploadResult = true;
             while (true)
             {
-                if (!hasChange)
-                {
-                    Thread.Sleep(1000);
-                    continue;
-                }
-
-                if (!isFirst)
-                {
-                    Thread.Sleep(3000);
-                }
+                // 每次循环都清理待上传列表
+                // 注意：如果上次上传失败，这里需要决策是否重试。
+                // 当前逻辑是如果上次失败，则不清理，下次会合并新的变更一起重试。
                 if (uploadResult)
                 {
                     _newFiles.Clear();
                 }
+
+                // 运行本地命令（如果需要）
                 RunLocalCmd(_localCmd);
 
+                // 每次循环都主动扫描目录
+                // WriteLogAndConsole("\r\nScanning for file changes...");
                 ScanDir(rootDir);
-                if (_newFiles.Where(d => d.FileType != 2).ToList().Count > 0)
+
+                if (_newFiles.Any(d => d.FileType != 2)) // FileType 2 表示上传失败的文件
                 {
                     var actionTime = DateTime.Now.AddMinutes(-1).ToString("HH:mm");
 
-                    WriteLogAndConsole("\r\nFiles changes detected...");
-                    foreach (var file in _newFiles)
+                    WriteLogAndConsole($"Files changes detected({DateTime.Now:yyyy-MM-dd HH:mm:ss}):");
+                    foreach (var file in _newFiles.Where(f => f.FileType != 2))
                     {
-                        WriteLogAndConsole($"【{DateTime.Now:yyyy-MM-dd HH:mm:ss}】Get {file.FileTypeText}:{file.FileName}");
+                        WriteLogAndConsole($"  - [{file.FileTypeText}] {file.FileName}");
                     }
 
-
-                    
+                    uploadResult = false; // 先假设上传会失败
                     for (int i = 0; i < 5; i++)
                     {
-                        uploadResult = UploadFileUsingSsh();
-                        if (uploadResult)
+                        if (UploadFileUsingSsh())
                         {
+                            uploadResult = true;
                             break;
                         }
-                        CloseFTP();
+                        WriteLogAndConsole($"Upload attempt {i + 1} failed. Retrying in 3 seconds...");
+                        CloseFTP(); // 确保关闭旧连接
+                        Thread.Sleep(3000);
                     }
-                   
+
                     if (uploadResult)
                     {
-                        Thread.Sleep(3000);
+                        WriteLogAndConsole("Upload successful.");
+                        Thread.Sleep(1000); // 等待一下，确保文件系统稳定
                         var runCmdResult = RunCmd(_cmd);
                         WriteLogAndConsole($"---------------------------Command execution {(runCmdResult ? "successfully" : "failed")}---------------------------");
                     }
                     else
                     {
+                        WriteLogAndConsole("Upload failed after multiple retries.");
                         foreach (var failFile in _newFiles)
                         {
+                            // 标记为失败，以便下次扫描时重试
                             failFile.FileType = 2;
                         }
                         SetCheckTimeValue(actionTime);
                     }
                 }
-                hasChange = false;
-                WriteLogAndConsole($"Total number of files monitored is {_checkFileTime.Count}");
+                else
+                {
+                    //  WriteLogAndConsole("No changes detected.");
+                }
+
                 if (isFirst)
                 {
+                    WriteLogAndConsole($"Initial scan complete. Total files monitored: {_checkFileTime.Count}");
                     SetCheckTimeValue();
+                    isFirst = false;
                 }
-                isFirst = false;
 
-                Thread.Sleep(3000);
-
+                // 在每次扫描循环后，固定休眠一段时间，例如 5 秒
+                int pollingIntervalSeconds = 5;
+                //    WriteLogAndConsole($"Waiting for {pollingIntervalSeconds} seconds before next scan...\n");
+                Thread.Sleep(pollingIntervalSeconds * 1000);
             }
         }
 
-        private void OnChanged(object source, FileSystemEventArgs e)
-        {
-            hasChange = true;
-        }
+        //private void OnChanged(object source, FileSystemEventArgs e)
+        //{
+        //    hasChange = true;
+        //}
 
         void CloseFTP()
         {
@@ -255,7 +248,7 @@ namespace AutoUploadToFTP
 
                 if (!_checkFileTime.ContainsKey(dirAndFileName))
                 {
-                    if (_uploadAllFileWhenFirstScan || !isFirst || fileInfo.LastWriteTime > _checkTime)
+                    if (_uploadAllFileWhenFirstScan || !isFirst || (_checkTime.HasValue && fileInfo.LastWriteTime > _checkTime.Value))
                     {
                         _newFiles.RemoveWhere(d => d.FileName == fileName);
                         _newFiles.Add(new UploadFileInfo { FileName = fileName, Path = pathName?.Replace("|||", "/"), FileType = 0 });
@@ -354,7 +347,7 @@ namespace AutoUploadToFTP
                         }
 
                     }
-                    WriteLogAndConsole($"---------------------------File upload {(hasError ? "failed" : "successfully")}---------------------------");
+                    WriteLogAndConsole($"---------------------------File upload {(hasError ? "failed" : "successfully")}---------------------------\r\n");
                     result = !hasError;
                 }
                 else
@@ -465,17 +458,12 @@ namespace AutoUploadToFTP
 
         private void SetCheckTimeValue(string timeValue = "")
         {
-            Configuration config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
-
-            // 获取appSettings节点
-            AppSettingsSection appSettings = config.AppSettings;
-
-            // 修改键值对
-            appSettings.Settings["CheckTime"].Value = timeValue;
-
-            // 保存修改
-            config.Save(ConfigurationSaveMode.Modified);
-            ConfigurationManager.RefreshSection("appSettings");
+            if (_config.CheckTimeStr.Equals(timeValue))
+            {
+                return;
+            }
+            _config.CheckTimeStr = timeValue;
+            AppConfig.UpdateConfig();
         }
     }
 }
